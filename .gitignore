@@ -1,0 +1,15 @@
+# Build artifacts
+project/framework/
+project/GostWG.xcodeproj/
+project/.build/
+project/**/xcuserdata/
+
+# Fetched/patched dependencies (scripts/fetch-deps.sh recreates them)
+vendored/
+
+# Local test binaries
+.tools/
+e2e/e2e
+
+# macOS noise
+.DS_Store

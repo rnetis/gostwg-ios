@@ -1,0 +1,113 @@
+diff --git a/dialer/icmp/dialer.go b/dialer/icmp/dialer.go
+index 845d0ae..01a3899 100644
+--- a/dialer/icmp/dialer.go
++++ b/dialer/icmp/dialer.go
+@@ -103,6 +103,12 @@ func (d *icmpDialer) Dial(ctx context.Context, addr string, opts ...dialer.DialO
+ 			id = rand.New(rand.NewSource(time.Now().UnixNano())).Intn(math.MaxUint16) + 1
+ 			raddr.Port = id
+ 		}
++		// On platforms where unprivileged ICMP echo sockets are used (e.g. iOS),
++		// the kernel assigns the echo identifier; adopt it so reply filtering matches.
++		if kid := icmp_pkg.KernelEchoID(pc); kid > 0 {
++			id = kid
++			raddr.Port = kid
++		}
+ 		pc = icmp_pkg.ClientConn(d.ip6, pc, id)
+ 
+ 		session, err = d.initSession(ctx, raddr, pc)
+diff --git a/internal/util/icmp/conn.go b/internal/util/icmp/conn.go
+index 2fd50a2..f0e9846 100644
+--- a/internal/util/icmp/conn.go
++++ b/internal/util/icmp/conn.go
+@@ -99,6 +99,19 @@ func ClientConn(ip6 bool, conn net.PacketConn, id int) net.PacketConn {
+ 	}
+ }
+ 
++// KernelEchoID returns the ICMP echo identifier assigned by the kernel for
++// unprivileged ICMP echo sockets (SOCK_DGRAM + IPPROTO_ICMP, network udp4/udp6).
++// It returns 0 for raw sockets, where the caller-provided ID is used as-is.
++//
++// On iOS, raw ICMP sockets are unavailable, so gost uses unprivileged ICMP echo
++// sockets and must adopt the kernel-assigned identifier.
++func KernelEchoID(conn net.PacketConn) int {
++	if addr, ok := conn.LocalAddr().(*net.UDPAddr); ok {
++		return addr.Port
++	}
++	return 0
++}
++
+ func (c *clientConn) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
+ 	buf := bufpool.Get(readBufferSize)
+ 	defer bufpool.Put(buf)
+diff --git a/internal/util/icmp/listen_ios.go b/internal/util/icmp/listen_ios.go
+new file mode 100644
+index 0000000..5d7873c
+--- /dev/null
++++ b/internal/util/icmp/listen_ios.go
+@@ -0,0 +1,31 @@
++//go:build ios
++
++package icmp
++
++import (
++        "net"
++
++        "golang.org/x/net/icmp"
++)
++
++// ListenPacket listens for ICMP packets on the given network and address.
++//
++// On iOS, unprivileged processes cannot open raw ICMP sockets (SOCK_RAW).
++// Instead we use unprivileged ICMP echo sockets (SOCK_DGRAM + IPPROTO_ICMP),
++// which the kernel restricts to ICMP echo request/reply traffic — exactly
++// what gost's ICMP transport needs.
++//
++// With SOCK_DGRAM ICMP sockets the kernel assigns the echo identifier itself
++// (visible as the "port" of the local address); the dialer picks it up via
++// KernelEchoID. The gost ICMP relay server mirrors the echo ID in its Echo
++// Reply packets, so this is fully interoperable with a gost server running
++// with raw sockets on Linux/macOS.
++func ListenPacket(network, address string) (net.PacketConn, error) {
++        switch network {
++        case "ip4:icmp":
++                network = "udp4"
++        case "ip6:ipv6-icmp":
++                network = "udp6"
++        }
++        return icmp.ListenPacket(network, address)
++}
+diff --git a/internal/util/icmp/listen_other.go b/internal/util/icmp/listen_other.go
+index 7572083..84b8942 100644
+--- a/internal/util/icmp/listen_other.go
++++ b/internal/util/icmp/listen_other.go
+@@ -1,14 +1,29 @@
+-//go:build !windows
++//go:build !windows && !ios
+ 
+ package icmp
+ 
+ import (
+ 	"net"
++	"os"
+ 
+ 	"golang.org/x/net/icmp"
+ )
+ 
+ // ListenPacket listens for ICMP packets on the given network and address.
++//
++// Setting GOST_ICMP_UNPRIVILEGED=1 switches to unprivileged ICMP echo sockets
++// (SOCK_DGRAM + IPPROTO_ICMP, networks "udp4"/"udp6"), mirroring the behaviour
++// of the iOS build. This is useful for testing the unprivileged code path on
++// Linux (requires net.ipv4.ping_group_range to permit the current group) and
++// on macOS (where unprivileged ICMP echo sockets are always permitted).
+ func ListenPacket(network, address string) (net.PacketConn, error) {
++	if os.Getenv("GOST_ICMP_UNPRIVILEGED") == "1" {
++		switch network {
++		case "ip4:icmp":
++			network = "udp4"
++		case "ip6:ipv6-icmp":
++			network = "udp6"
++		}
++	}
+ 	return icmp.ListenPacket(network, address)
+ }

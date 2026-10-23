@@ -1,0 +1,31 @@
+diff --git a/config/loader/loader.go b/config/loader/loader.go
+index 9337541..2e90cb0 100644
+--- a/config/loader/loader.go
++++ b/config/loader/loader.go
+@@ -70,6 +70,13 @@ func Load(cfg *config.Config) error {
+ // a config into running components.
+ type loader struct{}
+ 
++// DefaultLoggerOverride, when non-nil, is installed as the global default
++// logger by Load instead of building one from the config. Embedders (e.g.
++// mobile applications running gost in-process) use it to route gost logs
++// into their own logging system and to keep the concrete type stored in
++// logger's atomic.Value consistent across repeated Load calls.
++var DefaultLoggerOverride logger.Logger
++
+ // Load builds the default TLS config, registers all named components from
+ // cfg into the global registries, and sets the default logger and TLS config.
+ func (l *loader) Load(cfg *config.Config) error {
+@@ -81,7 +88,11 @@ func (l *loader) Load(cfg *config.Config) error {
+ 	if logCfg == nil {
+ 		logCfg = &config.LogConfig{}
+ 	}
+-	logger.SetDefault(logger_parser.ParseLogger(&config.LoggerConfig{Log: logCfg}))
++	if DefaultLoggerOverride != nil {
++		logger.SetDefault(DefaultLoggerOverride)
++	} else {
++		logger.SetDefault(logger_parser.ParseLogger(&config.LoggerConfig{Log: logCfg}))
++	}
+ 
+ 	tlsCfg, err := parsing.BuildDefaultTLSConfig(cfg.TLS)
+ 	if err != nil {

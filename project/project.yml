@@ -1,0 +1,63 @@
+name: GostWG
+options:
+  bundleIdPrefix: com.gostwg
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+    # The produced IPA is unsigned; sign it with your developer identity,
+    # Sideloadly, AltStore or install directly with TrollStore.
+    CODE_SIGNING_ALLOWED: "NO"
+    CODE_SIGN_IDENTITY: ""
+    DEVELOPMENT_TEAM: ""
+    ENABLE_USER_SCRIPT_SANDBOXING: "NO"
+
+targets:
+  GostWG:
+    type: application
+    platform: iOS
+    sources:
+      - path: GostWG
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.gostwg.vpn
+        PRODUCT_NAME: GostWG
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        INFOPLIST_FILE: GostWG/Info.plist
+        CODE_SIGN_ENTITLEMENTS: GostWG/GostWG.entitlements
+        TARGETED_DEVICE_FAMILY: "1,2"
+    dependencies:
+      - target: GostWGTunnel
+        embed: true
+
+  GostWGTunnel:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Tunnel
+      - path: WireGuardKit/WireGuardKit
+      - path: WireGuardKit/WgQuick
+      - path: WireGuardKit/WireGuardKitC
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.gostwg.vpn.tunnel
+        PRODUCT_NAME: GostWGTunnel
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        INFOPLIST_FILE: Tunnel/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Tunnel/GostWGTunnel.entitlements
+        # Swift module imports (WireGuardKitGo = the Go engine, WireGuardKitC = key helpers)
+        SWIFT_INCLUDE_PATHS: "$(SRCROOT)/framework/include $(SRCROOT)/WireGuardKit/WireGuardKitC"
+        LIBRARY_SEARCH_PATHS: "$(SRCROOT)/framework"
+        OTHER_LDFLAGS: "$(inherited) -lwg-go -lresolv -framework CoreFoundation -framework NetworkExtension"
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"
+    preBuildScripts:
+      - name: Build Go engine
+        script: |
+          "$SRCROOT/../scripts/build-go-framework.sh"
+        basedOnDependencyAnalysis: false

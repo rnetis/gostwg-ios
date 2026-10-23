@@ -1,0 +1,69 @@
+name: Build unsigned IPA
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.x"
+
+      - name: Install build tools
+        run: |
+          brew update
+          brew install xcodegen ldid
+
+      - name: Fetch and patch Go dependencies (go-gost/x with iOS ICMP patch)
+        run: ./scripts/fetch-deps.sh
+
+      - name: Build Go engine (wireguard-go + gost sidecar) for iOS
+        run: ./scripts/build-go-framework.sh
+
+      - name: Generate Xcode project
+        working-directory: project
+        run: xcodegen generate
+
+      - name: Build app (unsigned, device)
+        working-directory: project
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project GostWG.xcodeproj \
+            -scheme GostWG \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath .build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            | tee xcodebuild.log | grep -E "error:|BUILD" || true
+          test -d .build/Build/Products/Release-iphoneos/GostWG.app
+
+      - name: Fake-sign (with entitlements) and package IPA
+        run: |
+          APP="project/.build/Build/Products/Release-iphoneos/GostWG.app"
+          # Embed the NetworkExtension entitlements with an ldid fake signature.
+          # TrollStore keeps these entitlements; Sideloadly/AltStore re-sign with
+          # a real identity anyway.
+          ldid -S"$PWD/project/GostWG/GostWG.entitlements" "$APP/GostWG"
+          ldid -S"$PWD/project/Tunnel/GostWGTunnel.entitlements" "$APP/PlugIns/GostWGTunnel.appex/GostWGTunnel"
+          mkdir -p Payload
+          rm -rf Payload
+          cp -R "$APP" Payload/
+          zip -qr GostWG-unsigned.ipa Payload
+          ls -la GostWG-unsigned.ipa
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GostWG-unsigned-ipa
+          path: GostWG-unsigned.ipa
+          if-no-files-found: error
