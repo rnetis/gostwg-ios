@@ -1,0 +1,6 @@
+version: 1
+bundleID: com.gostwg.vpn
+product: GostWG
+extensions:
+  - product: GostWGTunnel
+    infoPath: GostWGTunnel-Info.plist

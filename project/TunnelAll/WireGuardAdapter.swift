@@ -1,0 +1,1 @@
+/home/rayan/Downloads/gostwg-ios-src/gostwg-ios/project/WireGuardKit/WireGuardKit/WireGuardAdapter.swift
