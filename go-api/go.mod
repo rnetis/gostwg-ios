@@ -88,3 +88,6 @@ require (
 // scripts/fetch-deps.sh (clones go-gost/x at a pinned commit and applies
 // patches/gost-x/*.patch).
 replace github.com/go-gost/x => ../vendored/gost-x
+
+// m1cpu uses IOKit symbols unavailable on iOS; stub it out.
+replace github.com/shoenig/go-m1cpu => ./stubs/m1cpu
