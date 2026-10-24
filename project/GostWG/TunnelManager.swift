@@ -103,24 +103,45 @@ final class TunnelManager: ObservableObject {
     func fetchLogs() {
         guard let session = manager?.connection as? NETunnelProviderSession else {
             // Profile might exist but not be loaded into `manager` yet.
-            NETunnelProviderManager.loadAllFromPreferences { managers, _ in
+            NETunnelProviderManager.loadAllFromPreferences { [weak self] managers, error in
+                if let error = error {
+                    self?.report("[app] loadAllFromPreferences failed: \(error.localizedDescription)")
+                    return
+                }
                 guard let session = managers?
                     .first(where: { $0.isEnabled })?
-                    .connection as? NETunnelProviderSession else { return }
-                self.requestLogs(session: session)
+                    .connection as? NETunnelProviderSession else {
+                    self?.report("[app] no enabled VPN profile found — tap Connect first")
+                    return
+                }
+                self?.requestLogs(session: session)
             }
             return
         }
         requestLogs(session: session)
     }
 
+    private func report(_ message: String) {
+        DispatchQueue.main.async { self.logText = message }
+    }
+
     private func requestLogs(session: NETunnelProviderSession) {
-        try? session.sendProviderMessage(Data([AppConstants.logRequestCode])) { data in
-            guard let data = data, let text = String(data: data, encoding: .utf8) else {
-                DispatchQueue.main.async { self.logText = "(no log data — is the tunnel running?)" }
-                return
+        do {
+            try session.sendProviderMessage(Data([AppConstants.logRequestCode])) { [weak self] data in
+                guard let data = data, let text = String(data: data, encoding: .utf8) else {
+                    DispatchQueue.main.async {
+                        self?.logText = "(no log data from extension — it may have crashed at launch)\n"
+                            + "[gost running check omitted]"
+                    }
+                    return
+                }
+                DispatchQueue.main.async { self?.logText = text }
             }
-            DispatchQueue.main.async { self.logText = text }
+        } catch {
+            // sendProviderMessage throws when the extension process is not
+            // reachable (crashed at launch, or the tunnel never started).
+            report("[app] could not reach tunnel extension: \(error.localizedDescription)\n"
+                   + "This usually means the extension crashed immediately at launch.")
         }
     }
 
