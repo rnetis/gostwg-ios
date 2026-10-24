@@ -26,7 +26,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.gostwg.vpn
         PRODUCT_NAME: GostWG
-        MARKETING_VERSION: "1.0.0"
+        MARKETING_VERSION: "1.1.0"
         CURRENT_PROJECT_VERSION: "1"
         INFOPLIST_FILE: GostWG/Info.plist
         CODE_SIGN_ENTITLEMENTS: GostWG/GostWG.entitlements
@@ -47,7 +47,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.gostwg.vpn.tunnel
         PRODUCT_NAME: GostWGTunnel
-        MARKETING_VERSION: "1.0.0"
+        MARKETING_VERSION: "1.1.0"
         CURRENT_PROJECT_VERSION: "1"
         INFOPLIST_FILE: Tunnel/Info.plist
         CODE_SIGN_ENTITLEMENTS: Tunnel/GostWGTunnel.entitlements
