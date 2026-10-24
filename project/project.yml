@@ -1,9 +1,6 @@
 name: GostWG
 options:
   bundleIdPrefix: com.gostwg
-  # Keep the generated project format readable by the Xcode on GitHub's
-  # macos-14 runners (latest xcodegen defaults to objectVersion 77).
-  xcodeVersion: "15.0"
   deploymentTarget:
     iOS: "16.0"
   createIntermediateGroups: true

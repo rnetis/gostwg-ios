@@ -20,7 +20,13 @@ jobs:
       - name: Install build tools
         run: |
           brew update
-          brew install xcodegen ldid
+          brew install ldid
+          # Pin xcodegen: latest writes objectVersion 77 which the runner's
+          # Xcode cannot open.
+          curl -sL https://github.com/yonaskolb/XcodeGen/releases/download/2.40.0/xcodegen.zip -o /tmp/xcodegen.zip
+          unzip -q /tmp/xcodegen.zip -d /tmp/xcodegen
+          sudo cp /tmp/xcodegen/xcodegen/bin/xcodegen /usr/local/bin/xcodegen
+          xcodegen --version
 
       - name: Fetch and patch Go dependencies (go-gost/x with iOS ICMP patch)
         run: ./scripts/fetch-deps.sh
