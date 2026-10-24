@@ -115,7 +115,7 @@ final class TunnelManager: ObservableObject {
     }
 
     private func requestLogs(session: NETunnelProviderSession) {
-        session.sendProviderMessage(Data([AppConstants.logRequestCode])) { data in
+        try? session.sendProviderMessage(Data([AppConstants.logRequestCode])) { data in
             guard let data = data, let text = String(data: data, encoding: .utf8) else {
                 DispatchQueue.main.async { self.logText = "(no log data — is the tunnel running?)" }
                 return
