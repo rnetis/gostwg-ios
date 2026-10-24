@@ -26,8 +26,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.gostwg.vpn
         PRODUCT_NAME: GostWG
-        MARKETING_VERSION: "1.2.0"
-        CURRENT_PROJECT_VERSION: "2"
+        MARKETING_VERSION: "1.2.1"
+        CURRENT_PROJECT_VERSION: "3"
         INFOPLIST_FILE: GostWG/Info.plist
         CODE_SIGN_ENTITLEMENTS: GostWG/GostWG.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"
@@ -47,8 +47,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.gostwg.vpn.tunnel
         PRODUCT_NAME: GostWGTunnel
-        MARKETING_VERSION: "1.2.0"
-        CURRENT_PROJECT_VERSION: "2"
+        MARKETING_VERSION: "1.2.1"
+        CURRENT_PROJECT_VERSION: "3"
         INFOPLIST_FILE: Tunnel/Info.plist
         CODE_SIGN_ENTITLEMENTS: Tunnel/GostWGTunnel.entitlements
         # Swift module imports (WireGuardKitGo = the Go engine, WireGuardKitC = key helpers)
