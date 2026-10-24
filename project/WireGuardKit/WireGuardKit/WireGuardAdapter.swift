@@ -22,6 +22,9 @@ public enum WireGuardAdapterError: Error {
 
     /// Failure to start WireGuard backend.
     case startWireGuardBackend(Int32)
+
+    /// Unexpected failure while preparing or starting the tunnel.
+    case startFailure(String)
 }
 
 /// Enum representing internal state of the `WireGuardAdapter`
@@ -202,7 +205,9 @@ public class WireGuardAdapter {
                 networkMonitor.cancel()
                 completionHandler(error)
             } catch {
-                fatalError()
+                networkMonitor.cancel()
+                self.logHandler(.error, "Unexpected error while starting tunnel: \(error)")
+                completionHandler(.startFailure(String(describing: error)))
             }
         }
     }
@@ -278,7 +283,8 @@ public class WireGuardAdapter {
             } catch let error as WireGuardAdapterError {
                 completionHandler(error)
             } catch {
-                fatalError()
+                self.logHandler(.error, "Unexpected error while updating tunnel: \(error)")
+                completionHandler(.startFailure(String(describing: error)))
             }
         }
     }
