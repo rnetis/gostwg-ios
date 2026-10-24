@@ -120,6 +120,11 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             "debug":\(settings.debug ? "true" : "false")}
             """
             log.add("gost config: \(gostJSON)")
+
+            // gost forwards its startup logs through WireGuard's C logger.
+            // Initialize the adapter first so that logger is registered even
+            // when gostStart fails before the WireGuard backend is started.
+            _ = adapter
             if gostStart(gostJSON) != 0 {
                 throw TunnelError.gostStartFailed
             }
