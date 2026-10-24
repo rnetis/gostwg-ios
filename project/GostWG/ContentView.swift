@@ -62,13 +62,13 @@ struct ContentView: View {
                 Section {
                     Button(action: toggleTunnel) {
                         HStack {
-                            if status.isLoading { ProgressView() }
+                            if tunnel.status.isLoading { ProgressView() }
                             Text(tunnel.status == .connected ? "Disconnect" : "Connect")
                                 .frame(maxWidth: .infinity)
                                 .font(.headline)
                         }
                     }
-                    .disabled(status.isStarting)
+                    .disabled(tunnel.status.isStarting)
 
                     statusView
 
