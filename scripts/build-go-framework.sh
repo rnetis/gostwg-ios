@@ -59,7 +59,7 @@ mkdir -p "$OUT_DIR" "$INCLUDE_DIR"
     export GOARCH=arm64
     export CGO_ENABLED=1
     export CC="$CC"
-    export CGO_CFLAGS="$CFLAGS"
+    export CGO_CFLAGS="$CFLAGS -I$REPO_ROOT/go-api/include-shim"
     export CGO_LDFLAGS="$CFLAGS"
     go build -buildmode c-archive -trimpath -ldflags=-w -o "$OUT_DIR/libwg-go.a" .
 )
