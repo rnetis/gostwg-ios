@@ -16,10 +16,30 @@ index 845d0ae..01a3899 100644
  
  		session, err = d.initSession(ctx, raddr, pc)
 diff --git a/internal/util/icmp/conn.go b/internal/util/icmp/conn.go
-index 2fd50a2..f0e9846 100644
+index 2fd50a2..c4174d3 100644
 --- a/internal/util/icmp/conn.go
 +++ b/internal/util/icmp/conn.go
-@@ -99,6 +99,19 @@ func ClientConn(ip6 bool, conn net.PacketConn, id int) net.PacketConn {
+@@ -87,18 +87,34 @@ func (m *message) Decode(b []byte) (n int, err error) {
+ type clientConn struct {
+ 	ip6 bool
+ 	net.PacketConn
+-	id  int
+-	seq uint32
++	id           int
++	unprivileged bool
++	seq          uint32
+ }
+ 
+ func ClientConn(ip6 bool, conn net.PacketConn, id int) net.PacketConn {
++	_, unprivileged := conn.LocalAddr().(*net.UDPAddr)
+ 	return &clientConn{
+-		ip6:        ip6,
+-		PacketConn: conn,
+-		id:         id,
++		ip6:          ip6,
++		PacketConn:   conn,
++		id:           id,
++		unprivileged: unprivileged,
  	}
  }
  
@@ -39,6 +59,53 @@ index 2fd50a2..f0e9846 100644
  func (c *clientConn) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
  	buf := bufpool.Get(readBufferSize)
  	defer bufpool.Put(buf)
+@@ -159,7 +175,10 @@ func (c *clientConn) WriteTo(b []byte, addr net.Addr) (n int, err error) {
+ 	// logger.Default().Infof("icmp: write to: %v %d", addr, len(b))
+ 	switch v := addr.(type) {
+ 	case *net.UDPAddr:
+-		addr = &net.IPAddr{IP: v.IP, Zone: v.Zone}
++		// Datagram ICMP sockets require UDPAddr so the port carries the echo ID.
++		if !c.unprivileged {
++			addr = &net.IPAddr{IP: v.IP, Zone: v.Zone}
++		}
+ 	}
+ 
+ 	buf := bufpool.Get(writeBufferSize)
+diff --git a/internal/util/icmp/listen_other.go b/internal/util/icmp/listen_other.go
+index 7572083..84b8942 100644
+--- a/internal/util/icmp/listen_other.go
++++ b/internal/util/icmp/listen_other.go
+@@ -1,14 +1,29 @@
+-//go:build !windows
++//go:build !windows && !ios
+ 
+ package icmp
+ 
+ import (
+ 	"net"
++	"os"
+ 
+ 	"golang.org/x/net/icmp"
+ )
+ 
+ // ListenPacket listens for ICMP packets on the given network and address.
++//
++// Setting GOST_ICMP_UNPRIVILEGED=1 switches to unprivileged ICMP echo sockets
++// (SOCK_DGRAM + IPPROTO_ICMP, networks "udp4"/"udp6"), mirroring the behaviour
++// of the iOS build. This is useful for testing the unprivileged code path on
++// Linux (requires net.ipv4.ping_group_range to permit the current group) and
++// on macOS (where unprivileged ICMP echo sockets are always permitted).
+ func ListenPacket(network, address string) (net.PacketConn, error) {
++	if os.Getenv("GOST_ICMP_UNPRIVILEGED") == "1" {
++		switch network {
++		case "ip4:icmp":
++			network = "udp4"
++		case "ip6:ipv6-icmp":
++			network = "udp6"
++		}
++	}
+ 	return icmp.ListenPacket(network, address)
+ }
 diff --git a/internal/util/icmp/listen_ios.go b/internal/util/icmp/listen_ios.go
 new file mode 100644
 index 0000000..5d7873c
@@ -76,38 +143,3 @@ index 0000000..5d7873c
 +        }
 +        return icmp.ListenPacket(network, address)
 +}
-diff --git a/internal/util/icmp/listen_other.go b/internal/util/icmp/listen_other.go
-index 7572083..84b8942 100644
---- a/internal/util/icmp/listen_other.go
-+++ b/internal/util/icmp/listen_other.go
-@@ -1,14 +1,29 @@
--//go:build !windows
-+//go:build !windows && !ios
- 
- package icmp
- 
- import (
- 	"net"
-+	"os"
- 
- 	"golang.org/x/net/icmp"
- )
- 
- // ListenPacket listens for ICMP packets on the given network and address.
-+//
-+// Setting GOST_ICMP_UNPRIVILEGED=1 switches to unprivileged ICMP echo sockets
-+// (SOCK_DGRAM + IPPROTO_ICMP, networks "udp4"/"udp6"), mirroring the behaviour
-+// of the iOS build. This is useful for testing the unprivileged code path on
-+// Linux (requires net.ipv4.ping_group_range to permit the current group) and
-+// on macOS (where unprivileged ICMP echo sockets are always permitted).
- func ListenPacket(network, address string) (net.PacketConn, error) {
-+	if os.Getenv("GOST_ICMP_UNPRIVILEGED") == "1" {
-+		switch network {
-+		case "ip4:icmp":
-+			network = "udp4"
-+		case "ip6:ipv6-icmp":
-+			network = "udp6"
-+		}
-+	}
- 	return icmp.ListenPacket(network, address)
- }

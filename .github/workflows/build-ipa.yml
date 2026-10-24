@@ -3,6 +3,7 @@ name: Build unsigned IPA
 on:
   push:
     branches: [main, master]
+    tags: ["v*"]
     paths-ignore:
       - .github/workflows/build-ipa.yml
   workflow_dispatch:
@@ -95,7 +96,9 @@ jobs:
           if-no-files-found: error
 
       - name: Publish numbered release
-        if: github.event_name == 'workflow_dispatch' && inputs.publish_versioned == true
+        if: >-
+          (github.event_name == 'workflow_dispatch' && inputs.publish_versioned == true) ||
+          (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -104,6 +107,10 @@ jobs:
           test -n "$VERSION" || { echo 'ERROR: MARKETING_VERSION is missing'; exit 1; }
           test -n "$BUILD" || { echo 'ERROR: CURRENT_PROJECT_VERSION is missing'; exit 1; }
           TAG="v$VERSION"
+          if [[ "${GITHUB_REF_TYPE:-branch}" == "tag" && "$GITHUB_REF_NAME" != "$TAG" ]]; then
+            echo "ERROR: pushed tag $GITHUB_REF_NAME does not match project version $TAG"
+            exit 1
+          fi
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
             || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" --title "GostWG $TAG" \
