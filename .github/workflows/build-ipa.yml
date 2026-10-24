@@ -4,6 +4,12 @@ on:
   push:
     branches: [main, master]
   workflow_dispatch:
+    inputs:
+      publish_versioned:
+        description: "Publish this build as a numbered versioned release"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   build:
@@ -86,8 +92,24 @@ jobs:
           path: GostWG-unsigned.ipa
           if-no-files-found: error
 
+      - name: Publish numbered release
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_versioned == true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(sed -n 's/^[[:space:]]*MARKETING_VERSION: "\([^"]*\)".*/\1/p' project/project.yml | head -n 1)
+          BUILD=$(sed -n 's/^[[:space:]]*CURRENT_PROJECT_VERSION: "\([^"]*\)".*/\1/p' project/project.yml | head -n 1)
+          test -n "$VERSION" || { echo 'ERROR: MARKETING_VERSION is missing'; exit 1; }
+          test -n "$BUILD" || { echo 'ERROR: CURRENT_PROJECT_VERSION is missing'; exit 1; }
+          TAG="v$VERSION"
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" --title "GostWG $TAG" \
+              --notes "GostWG $TAG (build $BUILD). Includes persistent tunnel logs for fast disconnect diagnosis."
+          gh release upload "$TAG" GostWG-unsigned.ipa --repo "$GITHUB_REPOSITORY" --clobber
+
       - name: Attach IPA to "latest" release
-        if: success()
+        if: success() && (github.event_name != 'workflow_dispatch' || inputs.publish_versioned != true)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
