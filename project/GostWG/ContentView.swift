@@ -129,7 +129,7 @@ struct ContentView: View {
 
     private var relaySettingsReady: Bool {
         let host = gostHost.trimmingCharacters(in: .whitespacesAndNewlines)
-        !host.isEmpty && host.lowercased() != "wireguard.fqdn"
+        return !host.isEmpty && host.lowercased() != "wireguard.fqdn"
             && validPort(gostPort) && validPort(localPort) && validPort(serverPort)
     }
 

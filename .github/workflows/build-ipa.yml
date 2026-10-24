@@ -43,17 +43,20 @@ jobs:
       - name: Build app (unsigned, device)
         working-directory: project
         run: |
-          set -o pipefail
-          xcodebuild \
+          if ! xcodebuild \
             -project GostWG.xcodeproj \
             -scheme GostWG \
             -configuration Release \
             -destination "generic/platform=iOS" \
             -derivedDataPath .build \
             CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGN_IDENTITY="" \
-            | tee xcodebuild.log | grep -E "error:|BUILD" || true
+            CODE_SIGN_IDENTITY="" > xcodebuild.log 2>&1; then
+            tail -n 100 xcodebuild.log
+            exit 1
+          fi
+          grep -E "error:|BUILD" xcodebuild.log || true
           test -d .build/Build/Products/Release-iphoneos/GostWG.app
+          test -f .build/Build/Products/Release-iphoneos/GostWG.app/GostWG
 
       - name: Fake-sign (with entitlements) and package IPA
         run: |
