@@ -63,8 +63,8 @@ jobs:
           # a real identity anyway.
           ldid -S"$PWD/project/GostWG/GostWG.entitlements" "$APP/GostWG"
           ldid -S"$PWD/project/Tunnel/GostWGTunnel.entitlements" "$APP/PlugIns/GostWGTunnel.appex/GostWGTunnel"
-          mkdir -p Payload
           rm -rf Payload
+          mkdir Payload
           cp -R "$APP" Payload/
           zip -qr GostWG-unsigned.ipa Payload
           ls -la GostWG-unsigned.ipa
