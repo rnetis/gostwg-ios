@@ -25,8 +25,13 @@ final class TunnelManager: ObservableObject {
     @objc private func statusDidChange(_ notification: Notification) {
         guard let conn = notification.object as? NETunnelProviderSession,
               conn === manager?.connection else { return }
+        let newStatus = conn.status
         DispatchQueue.main.async {
-            self.status = conn.status
+            let previousStatus = self.status
+            self.status = newStatus
+            if newStatus == .disconnected && previousStatus != .disconnected {
+                self.fetchDisconnectError(from: conn)
+            }
         }
     }
 
@@ -205,6 +210,22 @@ final class TunnelManager: ObservableObject {
             // reachable (crashed at launch, or the tunnel never started).
             report("[app] could not reach tunnel extension: \(error.localizedDescription)\n"
                    + "This usually means the extension crashed immediately at launch.")
+        }
+    }
+
+    /// NetworkExtension may reject a start before the packet-tunnel provider
+    /// launches. In that case there is no extension log, but the connection
+    /// still exposes the system's last disconnect error.
+    private func fetchDisconnectError(from connection: NEVPNConnection) {
+        connection.fetchLastDisconnectError { [weak self] error in
+            guard let self, let error else { return }
+            let nsError = error as NSError
+            let message = "VPN disconnect error: \(nsError.localizedDescription) (\(nsError.domain), code \(nsError.code))"
+            DispatchQueue.main.async {
+                self.lastError = message
+                if self.logText.isEmpty { self.logText = "[app] " + message }
+                else { self.logText += "\n[app] " + message }
+            }
         }
     }
 
