@@ -73,3 +73,12 @@ jobs:
           name: GostWG-unsigned-ipa
           path: GostWG-unsigned.ipa
           if-no-files-found: error
+
+      - name: Attach IPA to "latest" release
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create latest --repo "$GITHUB_REPOSITORY" --title "Latest unsigned IPA" --notes "Latest successful CI build (unsigned; install via TrollStore or re-sign)."
+          gh release upload latest GostWG-unsigned.ipa --repo "$GITHUB_REPOSITORY" --clobber
