@@ -17,6 +17,8 @@
 // any extra socket protection.
 
 import Foundation
+import Network
+import WireGuardKitGo
 import NetworkExtension
 import os
 
