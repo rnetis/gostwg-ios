@@ -18,6 +18,7 @@ final class TunnelManager: ObservableObject {
         NotificationCenter.default.addObserver(
             self, selector: #selector(statusDidChange),
             name: .NEVPNStatusDidChange, object: nil)
+        loadPersistedLogs()
         loadExistingProfile()
     }
 
@@ -55,6 +56,8 @@ final class TunnelManager: ObservableObject {
               status != .connected, status != .reasserting else { return }
         lastError = nil
         isPreparingConnection = true
+        resetPersistedLogs()
+        logText = "[app] Starting tunnel attempt at \(Date())"
 
         let providerProtocol = NETunnelProviderProtocol()
         providerProtocol.providerBundleIdentifier = AppConstants.tunnelBundleID
@@ -131,6 +134,7 @@ final class TunnelManager: ObservableObject {
 
     /// Fetches the last log lines from the tunnel extension.
     func fetchLogs() {
+        loadPersistedLogs()
         guard let session = manager?.connection as? NETunnelProviderSession else {
             // Profile might exist but not be loaded into `manager` yet.
             NETunnelProviderManager.loadAllFromPreferences { [weak self] managers, error in
@@ -155,7 +159,27 @@ final class TunnelManager: ObservableObject {
     }
 
     private func report(_ message: String) {
-        DispatchQueue.main.async { self.logText = message }
+        DispatchQueue.main.async {
+            if self.logText.isEmpty { self.logText = message }
+            else { self.logText += "\n" + message }
+        }
+    }
+
+    private func loadPersistedLogs() {
+        guard let directory = FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: AppConstants.appGroupID) else {
+            return
+        }
+        let file = directory.appendingPathComponent(AppConstants.logFileName)
+        guard let text = try? String(contentsOf: file, encoding: .utf8), !text.isEmpty else { return }
+        DispatchQueue.main.async { self.logText = text }
+    }
+
+    private func resetPersistedLogs() {
+        guard let directory = FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: AppConstants.appGroupID) else { return }
+        let file = directory.appendingPathComponent(AppConstants.logFileName)
+        try? FileManager.default.removeItem(at: file)
     }
 
     private func requestLogs(session: NETunnelProviderSession) {
@@ -163,12 +187,18 @@ final class TunnelManager: ObservableObject {
             try session.sendProviderMessage(Data([AppConstants.logRequestCode])) { [weak self] data in
                 guard let data = data, let text = String(data: data, encoding: .utf8) else {
                     DispatchQueue.main.async {
-                        self?.logText = "(no log data from extension — it may have crashed at launch)\n"
-                            + "[gost running check omitted]"
+                        self?.loadPersistedLogs()
+                        if self?.logText.isEmpty ?? true {
+                            self?.logText = "(No persisted log is available. The extension may have failed before it could write one.)"
+                        }
                     }
                     return
                 }
-                DispatchQueue.main.async { self?.logText = text }
+                DispatchQueue.main.async {
+                    // Prefer the extension response while it is alive; its
+                    // ring and the shared file contain the same latest lines.
+                    self?.logText = text
+                }
             }
         } catch {
             // sendProviderMessage throws when the extension process is not

@@ -32,6 +32,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         private var lines: [String] = []
         private let capacity = 400
         private let lock = NSLock()
+        private let logURL = FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: "group.com.gostwg.vpn")?
+            .appendingPathComponent("tunnel.log")
 
         func add(_ line: String) {
             lock.lock()
@@ -42,11 +45,25 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             if lines.count > capacity {
                 lines.removeFirst(lines.count - capacity)
             }
+            // Keep a durable copy outside the extension process. Network
+            // Extension may terminate immediately after a startup failure,
+            // before the containing app can request the in-memory ring.
+            if let logURL,
+               let data = lines.joined(separator: "\n").data(using: .utf8) {
+                do {
+                    try data.write(to: logURL, options: .atomic)
+                } catch {
+                    os_log("Could not persist tunnel log: %{public}@", log: OSLogShim.tunnel, error.localizedDescription)
+                }
+            }
         }
 
         var text: String {
             lock.lock()
             defer { lock.unlock() }
+            if let logURL, let persisted = try? String(contentsOf: logURL, encoding: .utf8), !persisted.isEmpty {
+                return persisted
+            }
             return lines.joined(separator: "\n")
         }
     }

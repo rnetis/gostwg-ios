@@ -5,6 +5,8 @@ import SwiftUI
 
 enum AppConstants {
     static let tunnelBundleID = "com.gostwg.vpn.tunnel"
+    static let appGroupID = "group.com.gostwg.vpn"
+    static let logFileName = "tunnel.log"
     static let profileDescription = "GostWG (WireGuard over gost relay+icmp)"
     static let logRequestCode: UInt8 = 1
 
@@ -90,6 +92,7 @@ struct ContentView: View {
     @StateObject private var tunnel = TunnelManager.shared
     @State private var showWireGuardEditor = false
     @State private var showLog = false
+    @State private var hasStartedConnectionAttempt = false
 
     @AppStorage("wgConfig") private var wgConfig: String = AppConstants.defaultWireGuardConfig
     @AppStorage("gostHost") private var gostHost: String = ""
@@ -154,6 +157,14 @@ struct ContentView: View {
         .onChange(of: tunnel.status) { newStatus in
             if newStatus == .connected {
                 tunnel.fetchLogs()
+            } else if newStatus == .disconnected && hasStartedConnectionAttempt {
+                showLog = true
+                tunnel.fetchLogs()
+                // The provider can finish writing its stop/error details just
+                // after NetworkExtension reports the status transition.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    tunnel.fetchLogs()
+                }
             }
         }
     }
@@ -402,6 +413,8 @@ struct ContentView: View {
         case .connected, .connecting, .reasserting:
             tunnel.disconnect()
         default:
+            hasStartedConnectionAttempt = true
+            showLog = true
             tunnel.connect(
                 wgConfig: wgConfig,
                 gostHost: gostHost.trimmingCharacters(in: .whitespaces),
