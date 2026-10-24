@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 
+import NetworkExtension
 import SwiftUI
 
 enum AppConstants {
