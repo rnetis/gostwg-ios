@@ -3,6 +3,8 @@ name: Build unsigned IPA
 on:
   push:
     branches: [main, master]
+    paths-ignore:
+      - .github/workflows/build-ipa.yml
   workflow_dispatch:
     inputs:
       publish_versioned:
@@ -107,12 +109,3 @@ jobs:
               --target "$GITHUB_SHA" --title "GostWG $TAG" \
               --notes "GostWG $TAG (build $BUILD). Includes persistent tunnel logs for fast disconnect diagnosis."
           gh release upload "$TAG" GostWG-unsigned.ipa --repo "$GITHUB_REPOSITORY" --clobber
-
-      - name: Attach IPA to "latest" release
-        if: success() && (github.event_name != 'workflow_dispatch' || inputs.publish_versioned != true)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release view latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
-            || gh release create latest --repo "$GITHUB_REPOSITORY" --title "Latest unsigned IPA" --notes "Latest successful CI build (unsigned; install via TrollStore or re-sign)."
-          gh release upload latest GostWG-unsigned.ipa --repo "$GITHUB_REPOSITORY" --clobber
