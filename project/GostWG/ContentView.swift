@@ -12,15 +12,17 @@ enum AppConstants {
     // gost UDP forwarder that runs INSIDE the tunnel extension process, so it
     // is always loopback. All WireGuard UDP traffic is relayed to the server
     // inside ICMP echo packets (QUIC-over-ICMP via gost relay+icmp).
+    // Never ship a real WireGuard private key in the app or repository.
+    // Users paste their own client key and server public key here.
     static let defaultWireGuardConfig = """
     [Interface]
     Address = 172.17.172.2/24
-    PrivateKey = sCqsTmYdDca/EX3I7EUs1bqpm+Nh5o46PRnITWwXn3o=
+    PrivateKey = REPLACE_WITH_CLIENT_PRIVATE_KEY
     DNS = 1.1.1.1, 8.8.8.8
     MTU = 1380
 
     [Peer]
-    PublicKey = Ki1LZUHyj2xAxe568qnPcQXrWBDmGQUODmQQ4div2jw=
+    PublicKey = REPLACE_WITH_SERVER_PUBLIC_KEY
     AllowedIPs = 0.0.0.0/0
     Endpoint = 127.0.0.1:51820
     PersistentKeepalive = 25
@@ -49,7 +51,7 @@ private enum TunnelState {
         case .invalid: return "Not set up"
         case .disconnected: return "Disconnected"
         case .connecting: return "Connecting…"
-        case .connected: return "Connected"
+        case .connected: return "VPN active"
         case .reasserting: return "Reconnecting…"
         case .disconnecting: return "Disconnecting…"
         case .unknown: return "Unknown"
@@ -58,8 +60,8 @@ private enum TunnelState {
 
     var detail: String {
         switch self {
-        case .connected: return "Your traffic is tunnelled over ICMP"
-        case .connecting: return "Handshaking with the relay…"
+        case .connected: return "Handshake status is available in the extension log"
+        case .connecting: return "Starting relay and WireGuard…"
         case .invalid: return "Tap Connect to create the VPN profile"
         case .disconnected: return "Tap Connect to start the tunnel"
         case .reasserting: return "Restoring the tunnel…"
@@ -86,9 +88,11 @@ private enum TunnelState {
 
 struct ContentView: View {
     @StateObject private var tunnel = TunnelManager.shared
+    @State private var showWireGuardEditor = false
+    @State private var showLog = false
 
     @AppStorage("wgConfig") private var wgConfig: String = AppConstants.defaultWireGuardConfig
-    @AppStorage("gostHost") private var gostHost: String = "wireguard.fqdn"
+    @AppStorage("gostHost") private var gostHost: String = ""
     @AppStorage("gostPort") private var gostPort: String = "12345"
     @AppStorage("localPort") private var localPort: String = "51820"
     @AppStorage("serverPort") private var serverPort: String = "51820"
@@ -96,15 +100,48 @@ struct ContentView: View {
 
     private var state: TunnelState { TunnelState(tunnel.status) }
 
+    private func wireGuardValue(for key: String) -> String? {
+        for line in wgConfig.split(whereSeparator: \.isNewline) {
+            let parts = line.split(separator: "=", maxSplits: 1)
+            guard parts.count == 2,
+                  parts[0].trimmingCharacters(in: .whitespaces) == key else { continue }
+            return parts[1].trimmingCharacters(in: .whitespaces)
+        }
+        return nil
+    }
+
+    private var wireGuardKeysReady: Bool {
+        guard let privateKey = wireGuardValue(for: "PrivateKey"),
+              let peerKey = wireGuardValue(for: "PublicKey") else { return false }
+        return !privateKey.isEmpty && !peerKey.isEmpty
+            && !privateKey.hasPrefix("REPLACE_WITH_")
+            && !peerKey.hasPrefix("REPLACE_WITH_")
+    }
+
+    private var wireGuardEndpointReady: Bool {
+        wireGuardValue(for: "Endpoint") == "127.0.0.1:\(localPort)"
+    }
+
+    private func validPort(_ value: String) -> Bool {
+        guard let port = UInt16(value) else { return false }
+        return port > 0
+    }
+
+    private var relaySettingsReady: Bool {
+        let host = gostHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        !host.isEmpty && host.lowercased() != "wireguard.fqdn"
+            && validPort(gostPort) && validPort(localPort) && validPort(serverPort)
+    }
+
     private var canConnect: Bool {
-        !gostHost.trimmingCharacters(in: .whitespaces).isEmpty
-            && !gostPort.isEmpty && !localPort.isEmpty && !serverPort.isEmpty
+        relaySettingsReady && wireGuardKeysReady && wireGuardEndpointReady
     }
 
     var body: some View {
         NavigationView {
             Form {
                 heroSection
+                setupSection
                 relaySection
                 wireguardSection
                 logSection
@@ -112,13 +149,6 @@ struct ContentView: View {
             }
             .navigationTitle("GostWG")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Text("v1.0")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-            }
         }
         .navigationViewStyle(.stack)
         .onChange(of: tunnel.status) { newStatus in
@@ -155,23 +185,23 @@ struct ContentView: View {
                     }
                 }
 
-                Text(state.label)
+                Text(tunnel.isPreparingConnection ? "Preparing VPN…" : state.label)
                     .font(.title2.weight(.semibold))
                     .foregroundColor(state.isActive ? .green : .primary)
 
-                Text(state.detail)
+                Text(tunnel.isPreparingConnection ? "Saving your VPN profile" : state.detail)
                     .font(.footnote)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
 
                 Button(action: toggleTunnel) {
                     HStack(spacing: 8) {
-                        if state.isBusy {
+                        if tunnel.isPreparingConnection || state.isBusy {
                             ProgressView().tint(.white)
                         } else {
                             Image(systemName: state.isActive ? "stop.fill" : "play.fill")
                         }
-                        Text(state.isActive || state.isBusy ? "Disconnect" : "Connect")
+                        Text(connectButtonTitle)
                             .font(.headline)
                     }
                     .frame(maxWidth: .infinity)
@@ -187,12 +217,20 @@ struct ContentView: View {
                     )
                     .foregroundColor(.white)
                 }
-                .disabled(state.isBusy || (!state.isActive && !canConnect))
+                .disabled(tunnel.isPreparingConnection || state.isBusy || (!state.isActive && !canConnect))
                 .animation(.easeInOut(duration: 0.2), value: state.isActive)
                 .padding(.top, 4)
 
-                if !canConnect {
-                    Label("Fill in the relay settings below first", systemImage: "exclamationmark.circle")
+                if !relaySettingsReady {
+                    Label("Enter a relay host and valid ports (1–65535)", systemImage: "exclamationmark.circle")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                } else if !wireGuardKeysReady {
+                    Label("Add your WireGuard private and peer public keys", systemImage: "exclamationmark.circle")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                } else if !wireGuardEndpointReady {
+                    Label("Set the WireGuard endpoint to 127.0.0.1:\(localPort)", systemImage: "exclamationmark.circle")
                         .font(.caption)
                         .foregroundColor(.orange)
                 }
@@ -209,22 +247,52 @@ struct ContentView: View {
         }
     }
 
+    private var connectButtonTitle: String {
+        if tunnel.isPreparingConnection { return "Preparing…" }
+        if state.isBusy {
+            switch state {
+            case .connecting: return "Connecting…"
+            case .reasserting: return "Reconnecting…"
+            case .disconnecting: return "Disconnecting…"
+            default: return "Working…"
+            }
+        }
+        return state.isActive ? "Disconnect" : "Connect"
+    }
+
+    private var setupSection: some View {
+        Section {
+            Label("Relay", systemImage: relaySettingsReady ? "checkmark.circle.fill" : "circle")
+                .foregroundColor(relaySettingsReady ? .green : .secondary)
+            Label("WireGuard keys", systemImage: wireGuardKeysReady ? "checkmark.circle.fill" : "circle")
+                .foregroundColor(wireGuardKeysReady ? .green : .secondary)
+            Label("Local endpoint", systemImage: wireGuardEndpointReady ? "checkmark.circle.fill" : "circle")
+                .foregroundColor(wireGuardEndpointReady ? .green : .secondary)
+        } header: {
+            Text("Setup")
+        } footer: {
+            Text("Complete setup, then connect. The WireGuard endpoint must match the local relay port.")
+        }
+    }
+
     // MARK: Relay settings
 
     private var relaySection: some View {
         Section {
-            fieldRow(icon: "server.rack", placeholder: "Relay host", text: $gostHost)
+            fieldRow(icon: "server.rack", placeholder: "Relay host or IP address", text: $gostHost)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
                 .keyboardType(.URL)
             fieldRow(icon: "antenna.radiowaves.left.and.right", placeholder: "Relay port", text: $gostPort)
                 .keyboardType(.numberPad)
-            fieldRow(icon: "arrow.up.forward", placeholder: "Local WG UDP port", text: $localPort)
-                .keyboardType(.numberPad)
-            fieldRow(icon: "arrow.down.forward", placeholder: "Server WG UDP port", text: $serverPort)
-                .keyboardType(.numberPad)
-            Toggle(isOn: $debugLogging) {
-                Label("Debug logging", systemImage: "pencil.and.outline")
+            DisclosureGroup("Advanced relay settings") {
+                fieldRow(icon: "arrow.up.forward", placeholder: "Local WG UDP port", text: $localPort)
+                    .keyboardType(.numberPad)
+                fieldRow(icon: "arrow.down.forward", placeholder: "Server WG UDP port", text: $serverPort)
+                    .keyboardType(.numberPad)
+                Toggle(isOn: $debugLogging) {
+                    Label("Debug logging", systemImage: "pencil.and.outline")
+                }
             }
         } header: {
             Text("Gost ICMP relay")
@@ -237,22 +305,24 @@ struct ContentView: View {
 
     private var wireguardSection: some View {
         Section {
-            TextEditor(text: $wgConfig)
-                .font(.system(.caption, design: .monospaced))
-                .frame(minHeight: 170)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
-                .accessibilityLabel("WireGuard configuration")
-            Button {
-                wgConfig = AppConstants.defaultWireGuardConfig
-            } label: {
-                Label("Reset to default config", systemImage: "arrow.counterclockwise")
-                    .font(.footnote)
+            DisclosureGroup("Edit configuration", isExpanded: $showWireGuardEditor) {
+                TextEditor(text: $wgConfig)
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(minHeight: 220)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .accessibilityLabel("WireGuard configuration")
+                Button {
+                    wgConfig = AppConstants.defaultWireGuardConfig
+                } label: {
+                    Label("Reset to template", systemImage: "arrow.counterclockwise")
+                        .font(.footnote)
+                }
             }
         } header: {
             Text("WireGuard configuration")
         } footer: {
-            Text("wg-quick format. The Endpoint must stay 127.0.0.1 — the gost forwarder runs inside the tunnel extension.")
+            Text("wg-quick format. Enter your own client private key and the server public key. The Endpoint must stay 127.0.0.1 — the gost forwarder runs inside the tunnel extension.")
         }
     }
 
@@ -260,6 +330,7 @@ struct ContentView: View {
 
     private var logSection: some View {
         Section {
+            DisclosureGroup("View extension log", isExpanded: $showLog) {
             ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 10)
                     .fill(Color.black.opacity(0.85))
@@ -284,6 +355,7 @@ struct ContentView: View {
             } label: {
                 Label("Refresh log", systemImage: "arrow.clockwise")
                     .font(.footnote)
+            }
             }
         } header: {
             Text("Extension log")

@@ -10,6 +10,7 @@ final class TunnelManager: ObservableObject {
     @Published var status: NEVPNStatus = .invalid
     @Published var logText: String = ""
     @Published var lastError: String?
+    @Published var isPreparingConnection = false
 
     private var manager: NETunnelProviderManager?
 
@@ -17,12 +18,32 @@ final class TunnelManager: ObservableObject {
         NotificationCenter.default.addObserver(
             self, selector: #selector(statusDidChange),
             name: .NEVPNStatusDidChange, object: nil)
+        loadExistingProfile()
     }
 
     @objc private func statusDidChange(_ notification: Notification) {
-        guard let conn = notification.object as? NETunnelProviderSession else { return }
+        guard let conn = notification.object as? NETunnelProviderSession,
+              conn === manager?.connection else { return }
         DispatchQueue.main.async {
             self.status = conn.status
+        }
+    }
+
+    private func loadExistingProfile() {
+        NETunnelProviderManager.loadAllFromPreferences { [weak self] managers, error in
+            guard let self else { return }
+            if let error {
+                self.fail("Failed to load VPN profile: \(error.localizedDescription)")
+                return
+            }
+            let owned = managers?.first {
+                ($0.protocolConfiguration as? NETunnelProviderProtocol)?
+                    .providerBundleIdentifier == AppConstants.tunnelBundleID
+            }
+            DispatchQueue.main.async {
+                self.manager = owned
+                self.status = owned?.connection.status ?? .invalid
+            }
         }
     }
 
@@ -30,7 +51,10 @@ final class TunnelManager: ObservableObject {
     /// prepares it for activation.
     func connect(wgConfig: String, gostHost: String, gostPort: String,
                  localPort: String, serverPort: String, debug: Bool) {
+        guard !isPreparingConnection, status != .connecting,
+              status != .connected, status != .reasserting else { return }
         lastError = nil
+        isPreparingConnection = true
 
         let providerProtocol = NETunnelProviderProtocol()
         providerProtocol.providerBundleIdentifier = AppConstants.tunnelBundleID
@@ -78,7 +102,10 @@ final class TunnelManager: ObservableObject {
                     }
                     do {
                         try session.startVPNTunnel(options: nil)
-                        DispatchQueue.main.async { self.status = session.status }
+                        DispatchQueue.main.async {
+                            self.status = session.status
+                            self.isPreparingConnection = false
+                        }
                     } catch {
                         self.fail("Failed to start tunnel: \(error.localizedDescription)")
                     }
@@ -91,7 +118,10 @@ final class TunnelManager: ObservableObject {
         guard let manager = manager else {
             // Fall back: find and stop whichever profile is running.
             NETunnelProviderManager.loadAllFromPreferences { managers, _ in
-                managers?.first(where: { $0.connection.status == .connected })?
+                managers?.first(where: {
+                    ($0.protocolConfiguration as? NETunnelProviderProtocol)?
+                        .providerBundleIdentifier == AppConstants.tunnelBundleID
+                })?
                     .connection.stopVPNTunnel()
             }
             return
@@ -109,7 +139,10 @@ final class TunnelManager: ObservableObject {
                     return
                 }
                 guard let session = managers?
-                    .first(where: { $0.isEnabled })?
+                    .first(where: {
+                        ($0.protocolConfiguration as? NETunnelProviderProtocol)?
+                            .providerBundleIdentifier == AppConstants.tunnelBundleID
+                    })?
                     .connection as? NETunnelProviderSession else {
                     self?.report("[app] no enabled VPN profile found — tap Connect first")
                     return
@@ -148,6 +181,7 @@ final class TunnelManager: ObservableObject {
     private func fail(_ message: String) {
         DispatchQueue.main.async {
             self.lastError = message
+            self.isPreparingConnection = false
             self.logText += "\n[app] " + message
         }
     }

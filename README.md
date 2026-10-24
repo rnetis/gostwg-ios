@@ -91,32 +91,44 @@ PublicKey = /RK0o2Y/6ogcJuTibDmoQFW1ZSK07se4SKPVyffsCFs=
 gost -L relay+icmp://:0
 ```
 
-In the app, the defaults already match your setup:
+In GostWG, complete the setup checks before connecting:
 
-- **WireGuard configuration** (wg-quick format). Note the Endpoint points at
-  the embedded gost forwarder on loopback, *not* at the server:
+- Enter the **relay host** and relay port. The default relay port is `12345`.
+- Open **Edit configuration** and enter your client private key and server
+  public key in the wg-quick configuration. The Endpoint points at the embedded
+  gost forwarder on loopback, *not* at the server:
 
   ```ini
   [Interface]
   Address = 172.17.172.2/24
-  PrivateKey = sCqsTmYdDca/EX3I7EUs1bqpm+Nh5o46PRnITWwXn3o=
+  PrivateKey = <client private key — generate a new key for this device>
   DNS = 1.1.1.1, 8.8.8.8
   MTU = 1380
 
   [Peer]
-  PublicKey = Ki1LZUHyj2xAxe568qnPcQXrWBDmGQUODmQQ4div2jw=
+  PublicKey = <server public key>
   AllowedIPs = 0.0.0.0/0
   Endpoint = 127.0.0.1:51820
   PersistentKeepalive = 25
   ```
 
-- **Gost ICMP relay**: host `wireguard.fqdn`, relay port `12345` (the port in
-  `relay+icmp://...:12345` — it becomes the ICMP echo identifier server-side),
-  local UDP port `51820`, server-side WireGuard UDP port `51820`.
+- The **local endpoint** must be `127.0.0.1:<local port>` (default
+  `127.0.0.1:51820`). If you change the local port under **Advanced relay
+  settings**, update the WireGuard Endpoint to match. Advanced settings also
+  include the server-side WireGuard port and debug logging.
 
-Tap **Connect**. First activation takes a couple of seconds (QUIC handshake
-over ICMP + WireGuard handshake). Use **Refresh log** to see the extension
-log if something misbehaves.
+Connect becomes available when the relay host, ports, keys, and local endpoint
+are valid. Tap **Connect**; the VPN status reports whether the iOS tunnel is
+active, while the extension log shows WireGuard handshake details.
+
+### Key safety
+
+Do not commit real WireGuard private keys to source control or ship them as app
+defaults. The example configuration uses placeholders; generate a unique client
+key pair for each device and add that client's public key to the server peer
+configuration. If a real private key was previously committed or shared, treat
+it as compromised: replace the corresponding server peer with a newly generated
+key pair. Removing it from the current files does not remove it from Git history.
 
 ## MTU and throughput notes
 
