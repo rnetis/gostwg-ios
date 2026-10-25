@@ -304,9 +304,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         var fromLen = socklen_t(MemoryLayout<sockaddr_in>.size)
         var from = sockaddr_in()
         let start = Date()
-        let n = withUnsafeMutablePointer(to: &from) { fromPtr in
+        let n: Int = withUnsafeMutablePointer(to: &from) { fromPtr in
             fromPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
-                reply.withUnsafeMutableBytes { buf in
+                withUnsafeMutableBytes(of: &reply) { buf in
                     recvfrom(sock, buf.baseAddress, reply.count, 0, sa, &fromLen)
                 }
             }
