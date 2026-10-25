@@ -114,5 +114,5 @@ jobs:
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
             || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" --title "GostWG $TAG" \
-              --notes "GostWG $TAG (build $BUILD). Includes persistent tunnel logs for fast disconnect diagnosis."
+              --notes "GostWG $TAG (build $BUILD). Adds an in-app SCTP/DCCP protocol focus selector with native WireGuard test commands."
           gh release upload "$TAG" GostWG-unsigned.ipa --repo "$GITHUB_REPOSITORY" --clobber

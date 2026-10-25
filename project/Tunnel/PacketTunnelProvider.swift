@@ -105,6 +105,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
         do {
             let settings = try readProviderConfiguration()
+            log.add("selected protocol focus: \(settings.protocolFocus), server WG address: \(settings.serverTunnelAddress) (guidance only; WireGuard routes all allowed IP protocols)")
             let tunnelConfiguration = try parseWireGuardConfig(settings.wgConfig)
 
             // Resolve the gost relay host with the pre-tunnel system resolver
@@ -180,6 +181,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         let gostPort: UInt16
         let localPort: UInt16
         let serverPort: UInt16
+        let protocolFocus: String
+        let serverTunnelAddress: String
         let debug: Bool
     }
 
@@ -204,6 +207,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             gostPort: uint16Value("gostPort", fallback: 12345),
             localPort: uint16Value("localPort", fallback: 51820),
             serverPort: uint16Value("serverPort", fallback: 51820),
+            protocolFocus: (providerConfiguration["protocolFocus"] as? String) ?? "all",
+            serverTunnelAddress: (providerConfiguration["serverTunnelAddress"] as? String) ?? "172.17.172.1",
             debug: (providerConfiguration["debug"] as? Bool) ?? false)
     }
 

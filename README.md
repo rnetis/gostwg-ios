@@ -123,43 +123,41 @@ active, while the extension log shows WireGuard handshake details.
 
 ### SCTP and DCCP traffic
 
-WireGuard carries IP packets, so SCTP and DCCP traffic routed through the
-interface can travel through GostWG too. No `socat` process or UDP conversion
-is needed when both endpoints support the protocol. Keep the phone peer in
-`AllowedIPs` and route the destination through WireGuard; for example, with
-the addresses above, a server service can listen on `172.17.172.1` and a
-client can connect to `172.17.172.1:5000` using SCTP or DCCP. The service must
-listen on that protocol, and the server firewall must allow its protocol
-(SCTP is IP protocol 132; DCCP is IP protocol 33). The relay's external
-`relay+icmp` transport remains unchanged.
+GostWG carries the complete WireGuard IP packet, so SCTP and DCCP use the same
+phone tunnel as TCP and UDP. The relay remains `relay+icmp`; no UDP conversion
+or extra process is needed. For the example WireGuard addresses in this
+README, the server is `172.17.172.1` and the phone is `172.17.172.2`.
 
-For a quick `socat` test, run one listener on the server:
+In the app's **Native SCTP / DCCP** section, choose **SCTP**, **DCCP**, or
+**All traffic** to display the matching server and client test commands. Set
+**Server WireGuard IP** to the server's address from your WireGuard network.
+This is a service setup aid: WireGuard routes all protocols allowed by the
+peer configuration and does not filter traffic based on this selection.
+
+On the server, start an SCTP test service and, separately, a DCCP test service
+(they can use the same port because they are different IP protocols):
 
 ```sh
 socat SCTP-LISTEN:5000,reuseaddr,fork EXEC:/bin/cat
-# or, in a separate test, replace SCTP-LISTEN with DCCP-LISTEN
+socat DCCP-LISTEN:5000,reuseaddr,fork EXEC:/bin/cat
 ```
 
-From a host whose traffic is routed through the phone's WireGuard tunnel,
-connect to the server's WireGuard address:
+From the phone, use an app that opens an SCTP or DCCP connection to
+`172.17.172.1:5000`. To test from a Linux host whose traffic is routed through
+the phone's VPN, use `socat` on that host:
 
 ```sh
 socat - SCTP:172.17.172.1:5000
-# or: socat - DCCP:172.17.172.1:5000
+socat - DCCP:172.17.172.1:5000
 ```
 
-This tests native SCTP or DCCP end to end. The iOS app itself does not run a
-client-side `socat` executable; it routes the IP traffic from apps on the
-phone through WireGuard.
-
-The sample `socat` commands that convert SCTP/DCCP to UDP are not a matching
-two-sided proxy: the client command connects back to the server's SCTP
-listener, while the server listener sends each accepted flow to the client's
-UDP port. That does not carry replies back over the original association and
-can send traffic into the same listener again. `socat`'s UDP address also
-does not preserve SCTP/DCCP association semantics. Use a protocol-aware
-gateway designed for the exact service if one endpoint only supports UDP;
-otherwise send SCTP/DCCP natively through the WireGuard tunnel.
+Allow the traffic through the server firewall as well: SCTP is IP protocol
+132 and DCCP is IP protocol 33. The iOS app routes packets from phone apps; it
+does not run a `socat` executable itself. The example UDP-forwarding commands
+do not create a client/server pair: each side points at the other side's
+listener, and UDP does not preserve SCTP/DCCP association semantics. If an
+endpoint only supports UDP, use a protocol-aware gateway for that specific
+application instead of these commands.
 
 ### Key safety
 
