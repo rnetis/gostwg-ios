@@ -56,8 +56,7 @@ final class TunnelManager: ObservableObject {
     /// Loads (or creates) the tunnel profile with the given settings and
     /// prepares it for activation.
     func connect(wgConfig: String, gostHost: String, gostPort: String,
-                 localPort: String, serverPort: String,
-                 protocolFocus: String, serverTunnelAddress: String, debug: Bool) {
+                 localPort: String, serverPort: String, debug: Bool) {
         guard !isPreparingConnection, status != .connecting,
               status != .connected, status != .reasserting else { return }
         lastError = nil
@@ -74,8 +73,6 @@ final class TunnelManager: ObservableObject {
             "gostPort": gostPort,
             "localPort": localPort,
             "serverPort": serverPort,
-            "protocolFocus": protocolFocus,
-            "serverTunnelAddress": serverTunnelAddress,
             "debug": debug,
         ]
 

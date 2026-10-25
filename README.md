@@ -128,12 +128,6 @@ phone tunnel as TCP and UDP. The relay remains `relay+icmp`; no UDP conversion
 or extra process is needed. For the example WireGuard addresses in this
 README, the server is `172.17.172.1` and the phone is `172.17.172.2`.
 
-In the app's **Native SCTP / DCCP** section, choose **SCTP**, **DCCP**, or
-**All traffic** to display the matching server and client test commands. Set
-**Server WireGuard IP** to the server's address from your WireGuard network.
-This is a service setup aid: WireGuard routes all protocols allowed by the
-peer configuration and does not filter traffic based on this selection.
-
 On the server, start an SCTP test service and, separately, a DCCP test service
 (they can use the same port because they are different IP protocols):
 

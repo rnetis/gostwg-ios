@@ -100,8 +100,6 @@ struct ContentView: View {
     @AppStorage("localPort") private var localPort: String = "51820"
     @AppStorage("serverPort") private var serverPort: String = "51820"
     @AppStorage("debugLogging") private var debugLogging: Bool = false
-    @AppStorage("protocolFocus") private var protocolFocus: String = "all"
-    @AppStorage("serverTunnelAddress") private var serverTunnelAddress: String = "172.17.172.1"
 
     private var state: TunnelState { TunnelState(tunnel.status) }
 
@@ -148,7 +146,6 @@ struct ContentView: View {
                 heroSection
                 setupSection
                 relaySection
-                protocolSection
                 wireguardSection
                 logSection
                 aboutSection
@@ -315,52 +312,6 @@ struct ContentView: View {
         }
     }
 
-    // MARK: Native IP protocol guidance
-
-    private var protocolSection: some View {
-        Section {
-            Picker("Protocol focus", selection: $protocolFocus) {
-                Text("All traffic").tag("all")
-                Text("SCTP").tag("sctp")
-                Text("DCCP").tag("dccp")
-            }
-            fieldRow(icon: "point.topleft.down.to.point.bottomright.curvepath", placeholder: "Server WireGuard IP", text: $serverTunnelAddress)
-                .keyboardType(.numbersAndPunctuation)
-            Text("This selects the service protocol shown in setup guidance. WireGuard still carries all routed IP traffic; it does not filter connections by protocol.")
-                .font(.footnote)
-                .foregroundColor(.secondary)
-            Text(protocolServerCommand)
-                .font(.system(.caption, design: .monospaced))
-                .textSelection(.enabled)
-            Text(protocolClientCommand)
-                .font(.system(.caption, design: .monospaced))
-                .textSelection(.enabled)
-            Text("Run the server command on the WireGuard server. The client test command runs on a Linux host routed through the phone; GostWG does not run socat on iOS.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        } header: {
-            Text("Native SCTP / DCCP")
-        } footer: {
-            Text("Allow the selected IP protocol through the server firewall: SCTP 132, DCCP 33. No UDP conversion bridge is used.")
-        }
-    }
-
-    private var protocolServerCommand: String {
-        switch protocolFocus {
-        case "sctp": return "socat SCTP-LISTEN:5000,reuseaddr,fork EXEC:/bin/cat"
-        case "dccp": return "socat DCCP-LISTEN:5000,reuseaddr,fork EXEC:/bin/cat"
-        default: return "socat SCTP-LISTEN:5000,reuseaddr,fork EXEC:/bin/cat\nsocat DCCP-LISTEN:5000,reuseaddr,fork EXEC:/bin/cat"
-        }
-    }
-
-    private var protocolClientCommand: String {
-        switch protocolFocus {
-        case "sctp": return "socat - SCTP:\(serverTunnelAddress):5000"
-        case "dccp": return "socat - DCCP:\(serverTunnelAddress):5000"
-        default: return "socat - SCTP:\(serverTunnelAddress):5000\nsocat - DCCP:\(serverTunnelAddress):5000"
-        }
-    }
-
     // MARK: WireGuard config
 
     private var wireguardSection: some View {
@@ -470,8 +421,6 @@ struct ContentView: View {
                 gostPort: gostPort,
                 localPort: localPort,
                 serverPort: serverPort,
-                protocolFocus: protocolFocus,
-                serverTunnelAddress: serverTunnelAddress,
                 debug: debugLogging)
         }
     }
