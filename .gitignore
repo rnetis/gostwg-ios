@@ -13,3 +13,4 @@ e2e/e2e
 
 # macOS noise
 .DS_Store
+project/xtoolbuild/
