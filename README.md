@@ -121,12 +121,21 @@ Connect becomes available when the relay host, ports, keys, and local endpoint
 are valid. Tap **Connect**; the VPN status reports whether the iOS tunnel is
 active, while the extension log shows WireGuard handshake details.
 
+Under **Protocol routing**, choose **All IP traffic**, **SCTP only**, or
+**DCCP only** before connecting. Focused modes enforce IP protocol numbers
+inside the tunnel in both directions: SCTP is protocol 132 and DCCP is 33.
+Every other IP protocol is dropped while a focused mode is active, so ordinary
+web, DNS, and app traffic will stop working. Choose **All IP traffic** for the
+normal full-tunnel VPN. iOS packet-tunnel routes cannot selectively bypass the
+VPN for non-selected protocols.
+
 ### SCTP and DCCP traffic
 
-GostWG carries the complete WireGuard IP packet, so SCTP and DCCP use the same
-phone tunnel as TCP and UDP. The relay remains `relay+icmp`; no UDP conversion
-or extra process is needed. For the example WireGuard addresses in this
-README, the server is `172.17.172.1` and the phone is `172.17.172.2`.
+GostWG can carry SCTP or DCCP through the same WireGuard IP tunnel as TCP and
+UDP. Select the matching protocol focus in the app to pass that protocol and
+drop other IP traffic; the relay remains `relay+icmp`, with no UDP conversion
+or extra process needed. For the example WireGuard addresses in this README,
+the server is `172.17.172.1` and the phone is `172.17.172.2`.
 
 On the server, start an SCTP test service and, separately, a DCCP test service
 (they can use the same port because they are different IP protocols):

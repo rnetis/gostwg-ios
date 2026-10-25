@@ -100,6 +100,7 @@ struct ContentView: View {
     @AppStorage("localPort") private var localPort: String = "51820"
     @AppStorage("serverPort") private var serverPort: String = "51820"
     @AppStorage("debugLogging") private var debugLogging: Bool = false
+    @AppStorage("protocolFocus") private var protocolFocus: String = "all"
 
     private var state: TunnelState { TunnelState(tunnel.status) }
 
@@ -146,6 +147,7 @@ struct ContentView: View {
                 heroSection
                 setupSection
                 relaySection
+                protocolSection
                 wireguardSection
                 logSection
                 aboutSection
@@ -312,6 +314,33 @@ struct ContentView: View {
         }
     }
 
+    // MARK: Protocol focus
+
+    private var protocolSection: some View {
+        Section {
+            Picker("Protocol focus", selection: $protocolFocus) {
+                Text("All IP traffic").tag("all")
+                Text("SCTP only").tag("sctp")
+                Text("DCCP only").tag("dccp")
+            }
+            .disabled(state.isActive || state.isBusy || tunnel.isPreparingConnection)
+
+            if protocolFocus == "all" {
+                Label("All IP protocols pass through WireGuard.", systemImage: "checkmark.shield")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+            } else {
+                Label("Only \(protocolFocus.uppercased()) passes through WireGuard. Other IP traffic is blocked while this mode is active.", systemImage: "hand.raised.fill")
+                    .font(.footnote)
+                    .foregroundColor(.orange)
+            }
+        } header: {
+            Text("Protocol routing")
+        } footer: {
+            Text("iOS packet-tunnel routes cannot send other IP protocols outside the VPN selectively. Choose All IP traffic to keep normal full-tunnel connectivity.")
+        }
+    }
+
     // MARK: WireGuard config
 
     private var wireguardSection: some View {
@@ -421,7 +450,8 @@ struct ContentView: View {
                 gostPort: gostPort,
                 localPort: localPort,
                 serverPort: serverPort,
-                debug: debugLogging)
+                debug: debugLogging,
+                protocolFocus: protocolFocus)
         }
     }
 }

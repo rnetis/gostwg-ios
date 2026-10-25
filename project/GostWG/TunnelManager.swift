@@ -56,7 +56,8 @@ final class TunnelManager: ObservableObject {
     /// Loads (or creates) the tunnel profile with the given settings and
     /// prepares it for activation.
     func connect(wgConfig: String, gostHost: String, gostPort: String,
-                 localPort: String, serverPort: String, debug: Bool) {
+                 localPort: String, serverPort: String, debug: Bool,
+                 protocolFocus: String) {
         guard !isPreparingConnection, status != .connecting,
               status != .connected, status != .reasserting else { return }
         lastError = nil
@@ -74,6 +75,7 @@ final class TunnelManager: ObservableObject {
             "localPort": localPort,
             "serverPort": serverPort,
             "debug": debug,
+            "protocolFocus": protocolFocus,
         ]
 
         NETunnelProviderManager.loadAllFromPreferences { [weak self] managers, error in

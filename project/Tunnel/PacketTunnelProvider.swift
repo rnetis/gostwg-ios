@@ -111,6 +111,11 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             // so the ICMP transport never depends on tunnel DNS.
             let relayAddr = try gostRelayAddress(settings.gostHost, port: settings.gostPort)
             log.add("gost relay address: \(relayAddr)")
+            if settings.protocolFocus == "all" {
+                log.add("protocol focus: all IP protocols")
+            } else {
+                log.add("protocol focus: \(settings.protocolFocus.uppercased()) only; other IP protocols will be dropped")
+            }
 
             // Start the embedded gost sidecar first: it owns the local UDP
             // listener that the WireGuard endpoint points at.
@@ -132,7 +137,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
             // Bring up the WireGuard engine. Endpoint inside the WG config is
             // 127.0.0.1:<localPort> — the gost listener started above.
-            adapter.start(tunnelConfiguration: tunnelConfiguration) { [weak self] adapterError in
+            adapter.start(tunnelConfiguration: tunnelConfiguration, protocolFocus: settings.protocolFocus) { [weak self] adapterError in
                 guard let self = self else { return }
                 if let adapterError = adapterError {
                     self.log.add("wg adapter failed: \(adapterError)")
@@ -181,6 +186,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         let localPort: UInt16
         let serverPort: UInt16
         let debug: Bool
+        let protocolFocus: String
     }
 
     private func readProviderConfiguration() throws -> ProviderSettings {
@@ -198,13 +204,19 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             return fallback
         }
 
+        let protocolFocus = providerConfiguration["protocolFocus"] as? String ?? "all"
+        guard ["all", "sctp", "dccp"].contains(protocolFocus) else {
+            throw TunnelError.savedProtocolConfigurationIsInvalid
+        }
+
         return ProviderSettings(
             wgConfig: wgConfig,
             gostHost: gostHost,
             gostPort: uint16Value("gostPort", fallback: 12345),
             localPort: uint16Value("localPort", fallback: 51820),
             serverPort: uint16Value("serverPort", fallback: 51820),
-            debug: (providerConfiguration["debug"] as? Bool) ?? false)
+            debug: (providerConfiguration["debug"] as? Bool) ?? false,
+            protocolFocus: protocolFocus)
     }
 
     private func parseWireGuardConfig(_ config: String) throws -> TunnelConfiguration {

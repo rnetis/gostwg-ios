@@ -7,6 +7,7 @@ package main
 
 // #include <stdlib.h>
 // #include <sys/types.h>
+// #include <stdint.h>
 // static void callLogger(void *func, void *ctx, int level, const char *msg)
 // {
 // 	((void(*)(void *, int, const char *))func)(ctx, level, msg);
@@ -83,7 +84,7 @@ func wgSetLogger(context, loggerFn uintptr) {
 }
 
 //export wgTurnOn
-func wgTurnOn(settings *C.char, tunFd int32) int32 {
+func wgTurnOn(settings *C.char, tunFd int32, protocolFocus C.int32_t) int32 {
 	logger := &device.Logger{
 		Verbosef: CLogger(0).Printf,
 		Errorf:   CLogger(1).Printf,
@@ -107,6 +108,14 @@ func wgTurnOn(settings *C.char, tunFd int32) int32 {
 		return -1
 	}
 	logger.Verbosef("Attaching to interface")
+	if protocolFocus != 0 && protocolFocus != 33 && protocolFocus != 132 {
+		logger.Errorf("Unsupported protocol focus: %d", int32(protocolFocus))
+		_ = tun.Close()
+		return -1
+	}
+	if protocolFocus != 0 {
+		tun = newProtocolFilterTUN(tun, byte(protocolFocus), logger)
+	}
 	dev := device.NewDevice(tun, conn.NewStdNetBind(), logger)
 
 	err = dev.IpcSet(C.GoString(settings))

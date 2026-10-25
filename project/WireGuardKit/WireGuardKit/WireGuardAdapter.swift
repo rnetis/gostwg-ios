@@ -56,6 +56,7 @@ public class WireGuardAdapter {
 
     /// Adapter state.
     private var state: State = .stopped
+    private var protocolFocus: String = "all"
 
     /// Tunnel device file descriptor.
     private var tunnelFileDescriptor: Int32? {
@@ -175,7 +176,7 @@ public class WireGuardAdapter {
     /// - Parameters:
     ///   - tunnelConfiguration: tunnel configuration.
     ///   - completionHandler: completion handler.
-    public func start(tunnelConfiguration: TunnelConfiguration, completionHandler: @escaping (WireGuardAdapterError?) -> Void) {
+    public func start(tunnelConfiguration: TunnelConfiguration, protocolFocus: String = "all", completionHandler: @escaping (WireGuardAdapterError?) -> Void) {
         workQueue.async {
             guard case .stopped = self.state else {
                 completionHandler(.invalidState)
@@ -189,6 +190,7 @@ public class WireGuardAdapter {
             networkMonitor.start(queue: self.workQueue)
 
             do {
+                self.protocolFocus = protocolFocus
                 let settingsGenerator = try self.makeSettingsGenerator(with: tunnelConfiguration)
                 try self.setNetworkSettings(settingsGenerator.generateNetworkSettings())
 
@@ -377,7 +379,14 @@ public class WireGuardAdapter {
             throw WireGuardAdapterError.cannotLocateTunnelFileDescriptor
         }
 
-        let handle = wgTurnOn(wgConfig, tunnelFileDescriptor)
+        let focusCode: Int32
+        switch protocolFocus {
+        case "all": focusCode = 0
+        case "sctp": focusCode = 132
+        case "dccp": focusCode = 33
+        default: throw WireGuardAdapterError.startFailure("Unsupported protocol focus: \(protocolFocus)")
+        }
+        let handle = wgTurnOn(wgConfig, tunnelFileDescriptor, focusCode)
         if handle < 0 {
             throw WireGuardAdapterError.startWireGuardBackend(handle)
         }
