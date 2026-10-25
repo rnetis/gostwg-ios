@@ -111,6 +111,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             // so the ICMP transport never depends on tunnel DNS.
             let relayAddr = try gostRelayAddress(settings.gostHost, port: settings.gostPort)
             log.add("gost relay address: \(relayAddr)")
+            log.add(icmpSelfTest(relayAddr: relayAddr))
             if settings.protocolFocus == "all" {
                 log.add("protocol focus: all IP protocols")
             } else {
@@ -247,6 +248,91 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             log.add("forward: udp :\(listen) -> \(parts[1]) (over tunnel)")
         }
         return services
+    }
+
+
+    // MARK: - ICMP self-test
+
+    /// Sends one ICMP echo request to the relay host over the same
+    /// unprivileged socket type gost uses (SOCK_DGRAM + IPPROTO_ICMP) and
+    /// reports whether the echo reply comes back. This separates "the NE
+    /// sandbox blocks ICMP sockets" from "the network/server drops ICMP".
+    private func icmpSelfTest(relayAddr: String) -> String {
+        let host = relayAddr.split(separator: ":").first.map(String.init) ?? relayAddr
+        var relayInAddr = in_addr()
+        guard inet_pton(AF_INET, host, &relayInAddr) == 1 else {
+            return "icmp self-test: cannot parse relay IP \(host)"
+        }
+        let ip = relayInAddr.s_addr
+
+        let sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP)
+        guard sock >= 0 else {
+            return "icmp self-test: socket(SOCK_DGRAM, IPPROTO_ICMP) FAILED errno \(errno) — the extension sandbox blocks ICMP sockets"
+        }
+        defer { close(sock) }
+
+        // 3 s receive timeout.
+        var tv = timeval(tv_sec: 3, tv_usec: 0)
+        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+
+        // Build an echo request; id/seq 0 — with DGRAM ICMP the kernel
+        // assigns the identifier itself.
+        var packet: [UInt8] = Array(repeating: 0, count: 8)
+        packet[0] = 8 // ICMP echo request
+        packet += Array("gostwg-probe".utf8) // 12-byte payload
+        let checksum = icmpChecksum(packet)
+        packet[2] = UInt8(checksum >> 8)
+        packet[3] = UInt8(checksum & 0xff)
+
+        var sin = sockaddr_in()
+        sin.sin_family = sa_family_t(AF_INET)
+        sin.sin_port = 0
+        sin.sin_addr = relayInAddr
+
+        let sent = withUnsafePointer(to: &sin) { sinPtr in
+            sinPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                packet.withUnsafeBytes { buf in
+                    sendto(sock, buf.baseAddress, packet.count, 0, sa, socklen_t(MemoryLayout<sockaddr_in>.size))
+                }
+            }
+        }
+        guard sent == packet.count else {
+            return "icmp self-test: sendto FAILED errno \(errno) — the sandbox or network blocks outbound ICMP echo"
+        }
+
+        var reply = [UInt8](repeating: 0, count: 128)
+        var fromLen = socklen_t(MemoryLayout<sockaddr_in>.size)
+        var from = sockaddr_in()
+        let start = Date()
+        let n = withUnsafeMutablePointer(to: &from) { fromPtr in
+            fromPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                reply.withUnsafeMutableBytes { buf in
+                    recvfrom(sock, buf.baseAddress, reply.count, 0, sa, &fromLen)
+                }
+            }
+        }
+        let ms = Int(Date().timeIntervalSince(start) * 1000)
+        guard n >= 20, reply[0] == 0 else {
+            return "icmp self-test: request SENT but NO echo reply within 3 s — network or server drops ICMP"
+        }
+        let replyPayload = String(bytes: reply[8..<20], encoding: .ascii) ?? "?"
+        if replyPayload == "gostwg-probe" {
+            return "icmp self-test: echo reply received in \(ms) ms — ICMP works end-to-end, the problem is inside gost's transport"
+        }
+        return "icmp self-test: got an echo reply (\(ms) ms) but payload mismatch: \(replyPayload)"
+    }
+
+    private func icmpChecksum(_ bytes: [UInt8]) -> UInt16 {
+        var sum: UInt32 = 0
+        var i = 0
+        while i < bytes.count {
+            let hi = UInt32(bytes[i]) << 8
+            let lo = i + 1 < bytes.count ? UInt32(bytes[i + 1]) : 0
+            sum += hi | lo
+            i += 2
+        }
+        while sum >> 16 != 0 { sum = (sum & 0xffff) + (sum >> 16) }
+        return ~UInt16(sum & 0xffff)
     }
 
     private func parseWireGuardConfig(_ config: String) throws -> TunnelConfiguration {
