@@ -301,13 +301,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         }
 
         var reply = [UInt8](repeating: 0, count: 128)
+        let replyCount = reply.count
         var fromLen = socklen_t(MemoryLayout<sockaddr_in>.size)
         var from = sockaddr_in()
         let start = Date()
         let n: Int = withUnsafeMutablePointer(to: &from) { fromPtr in
             fromPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
                 withUnsafeMutableBytes(of: &reply) { buf in
-                    recvfrom(sock, buf.baseAddress, reply.count, 0, sa, &fromLen)
+                    recvfrom(sock, buf.baseAddress, replyCount, 0, sa, &fromLen)
                 }
             }
         }
