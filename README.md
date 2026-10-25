@@ -121,6 +121,46 @@ Connect becomes available when the relay host, ports, keys, and local endpoint
 are valid. Tap **Connect**; the VPN status reports whether the iOS tunnel is
 active, while the extension log shows WireGuard handshake details.
 
+### SCTP and DCCP traffic
+
+WireGuard carries IP packets, so SCTP and DCCP traffic routed through the
+interface can travel through GostWG too. No `socat` process or UDP conversion
+is needed when both endpoints support the protocol. Keep the phone peer in
+`AllowedIPs` and route the destination through WireGuard; for example, with
+the addresses above, a server service can listen on `172.17.172.1` and a
+client can connect to `172.17.172.1:5000` using SCTP or DCCP. The service must
+listen on that protocol, and the server firewall must allow its protocol
+(SCTP is IP protocol 132; DCCP is IP protocol 33). The relay's external
+`relay+icmp` transport remains unchanged.
+
+For a quick `socat` test, run one listener on the server:
+
+```sh
+socat SCTP-LISTEN:5000,reuseaddr,fork EXEC:/bin/cat
+# or, in a separate test, replace SCTP-LISTEN with DCCP-LISTEN
+```
+
+From a host whose traffic is routed through the phone's WireGuard tunnel,
+connect to the server's WireGuard address:
+
+```sh
+socat - SCTP:172.17.172.1:5000
+# or: socat - DCCP:172.17.172.1:5000
+```
+
+This tests native SCTP or DCCP end to end. The iOS app itself does not run a
+client-side `socat` executable; it routes the IP traffic from apps on the
+phone through WireGuard.
+
+The sample `socat` commands that convert SCTP/DCCP to UDP are not a matching
+two-sided proxy: the client command connects back to the server's SCTP
+listener, while the server listener sends each accepted flow to the client's
+UDP port. That does not carry replies back over the original association and
+can send traffic into the same listener again. `socat`'s UDP address also
+does not preserve SCTP/DCCP association semantics. Use a protocol-aware
+gateway designed for the exact service if one endpoint only supports UDP;
+otherwise send SCTP/DCCP natively through the WireGuard tunnel.
+
 ### Key safety
 
 Do not commit real WireGuard private keys to source control or ship them as app
