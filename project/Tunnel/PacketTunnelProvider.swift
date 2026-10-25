@@ -115,12 +115,22 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 log.add("protocol focus: all IP protocols")
             } else {
                 log.add("protocol focus: \(settings.protocolFocus.uppercased()) only; other IP protocols will be dropped")
+                if !settings.forwards.isEmpty {
+                    log.add("WARNING: UDP port forwards will not pass while protocol focus is \(settings.protocolFocus) — set focus to All")
+                }
             }
 
             // Start the embedded gost sidecar first: it owns the local UDP
-            // listener that the WireGuard endpoint points at.
+            // listener that the WireGuard endpoint points at, plus any
+            // user-defined UDP port-forward rules.
+            let serviceList = gostServices(
+                localPort: settings.localPort,
+                serverPort: settings.serverPort,
+                forwards: settings.forwards)
+                .map { "\"\($0)\"" }
+                .joined(separator: ",")
             let gostJSON = """
-            {"services":["udp://:\(settings.localPort)/127.0.0.1:\(settings.serverPort)"],\
+            {"services":[\(serviceList)],\
             "nodes":["relay+icmp://\(relayAddr)"],\
             "debug":\(settings.debug ? "true" : "false")}
             """
@@ -187,6 +197,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         let serverPort: UInt16
         let debug: Bool
         let protocolFocus: String
+        let forwards: [String]
     }
 
     private func readProviderConfiguration() throws -> ProviderSettings {
@@ -216,7 +227,26 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             localPort: uint16Value("localPort", fallback: 51820),
             serverPort: uint16Value("serverPort", fallback: 51820),
             debug: (providerConfiguration["debug"] as? Bool) ?? false,
-            protocolFocus: protocolFocus)
+            protocolFocus: protocolFocus,
+            forwards: (providerConfiguration["forwards"] as? [String]) ?? [])
+    }
+
+    /// Builds the gost service list: the WireGuard UDP forwarder plus any
+    /// user-defined UDP port forwards. Rule format: "listenPort>host:port".
+    private func gostServices(localPort: UInt16, serverPort: UInt16, forwards: [String]) -> [String] {
+        var services = ["udp://:\(localPort)/127.0.0.1:\(serverPort)"]
+        for rule in forwards {
+            let parts = rule.split(separator: ">", maxSplits: 1)
+            guard parts.count == 2,
+                  let listen = UInt16(parts[0]), listen > 0,
+                  !parts[1].isEmpty else {
+                log.add("ignoring malformed forward rule: \(rule)")
+                continue
+            }
+            services.append("udp://:\(listen)/\(parts[1])")
+            log.add("forward: udp :\(listen) -> \(parts[1]) (over tunnel)")
+        }
+        return services
     }
 
     private func parseWireGuardConfig(_ config: String) throws -> TunnelConfiguration {

@@ -239,3 +239,25 @@ test does exercise.
   Jason A. Donenfeld (vendored from wireguard-apple).
 - gost — MIT/ASL2 (go-gost). Patches kept minimal and documented.
 - The rest — MIT.
+
+## SCTP / DCCP over the tunnel (socat on the VPS)
+
+WireGuard itself is protocol-agnostic, but iOS apps cannot create SCTP or
+DCCP sockets, so the protocol conversion runs on the VPS with socat while the
+phone keeps speaking plain UDP through the app's **Port forwarding** rules.
+
+Example — expose an SCTP service behind the VPS to a phone app, and let a
+phone UDP service accept SCTP clients:
+
+```bash
+# on the VPS (10.20.0.1 is the WireGuard server, 10.20.0.2 the phone):
+socat SCTP-LISTEN:5000,reuseaddr,fork UDP:10.20.0.2:5000
+socat DCCP-LISTEN:5000,reuseaddr,fork UDP:10.20.0.2:5000
+socat UDP-LISTEN:5000,reuseaddr,fork SCTP:10.20.0.1:5000
+```
+
+In the app, add a UDP forward rule (e.g. `5000 → 10.20.0.1:5000`) under
+**Port forwarding**: the sidecar listens on UDP 0.0.0.0:5000 inside the
+tunnel and relays datagrams over WireGuard to the target. Keep **Protocol
+focus = All IP traffic** while using UDP forwards (the focus filter would
+otherwise drop the UDP datagrams).

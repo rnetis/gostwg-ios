@@ -101,6 +101,10 @@ struct ContentView: View {
     @AppStorage("serverPort") private var serverPort: String = "51820"
     @AppStorage("debugLogging") private var debugLogging: Bool = false
     @AppStorage("protocolFocus") private var protocolFocus: String = "all"
+    @AppStorage("forwardRules") private var forwardRulesRaw: String = ""
+
+    @State private var forwardRules: [ForwardRule] = []
+    @State private var forwardRulesLoaded = false
 
     private var state: TunnelState { TunnelState(tunnel.status) }
 
@@ -148,12 +152,18 @@ struct ContentView: View {
                 setupSection
                 relaySection
                 protocolSection
+                forwardSection
                 wireguardSection
                 logSection
                 aboutSection
             }
             .navigationTitle("GostWG")
             .navigationBarTitleDisplayMode(.inline)
+            .onAppear {
+                guard !forwardRulesLoaded else { return }
+                forwardRules = ForwardRule.decodeAll(from: forwardRulesRaw)
+                forwardRulesLoaded = true
+            }
         }
         .navigationViewStyle(.stack)
         .onChange(of: tunnel.status) { newStatus in
@@ -341,6 +351,56 @@ struct ContentView: View {
         }
     }
 
+    // MARK: Port forwarding
+
+    private var forwardSection: some View {
+        Section {
+            ForEach($forwardRules) { $rule in
+                forwardRow(rule: $rule)
+            }
+            .onDelete { indexSet in
+                forwardRules.remove(atOffsets: indexSet)
+                persistForwardRules()
+            }
+
+            Button {
+                forwardRules.append(ForwardRule())
+                persistForwardRules()
+            } label: {
+                Label("Add UDP forward", systemImage: "plus.circle")
+                    .font(.footnote)
+            }
+        } header: {
+            Text("Port forwarding (UDP)")
+        } footer: {
+            Text("Each rule listens on UDP 0.0.0.0:PORT inside the tunnel and forwards to TARGET over the VPN. Run the SCTP/DCCP conversion on the VPS with socat, e.g.\n\nsocat SCTP-LISTEN:5000,reuseaddr,fork UDP:10.20.0.2:5000\nsocat DCCP-LISTEN:5000,reuseaddr,fork UDP:10.20.0.2:5000\n\n(iOS cannot speak SCTP/DCCP natively, so the conversion happens server-side.)")
+        }
+        .onChange(of: forwardRules) { _ in persistForwardRules() }
+    }
+
+    private func forwardRow(rule: Binding<ForwardRule>) -> some View {
+        HStack(spacing: 8) {
+            TextField("Port", text: rule.listen)
+                .keyboardType(.numberPad)
+                .frame(width: 64)
+            Image(systemName: "arrow.right")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            TextField("Target host", text: rule.host)
+                .keyboardType(.URL)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+            TextField("Port", text: rule.port)
+                .keyboardType(.numberPad)
+                .frame(width: 64)
+        }
+        .font(.footnote)
+    }
+
+    private func persistForwardRules() {
+        forwardRulesRaw = ForwardRule.encodeAll(forwardRules)
+    }
+
     // MARK: WireGuard config
 
     private var wireguardSection: some View {
@@ -451,7 +511,8 @@ struct ContentView: View {
                 localPort: localPort,
                 serverPort: serverPort,
                 debug: debugLogging,
-                protocolFocus: protocolFocus)
+                protocolFocus: protocolFocus,
+                forwards: forwardRules.compactMap { $0.wire() })
         }
     }
 }
@@ -459,5 +520,56 @@ struct ContentView: View {
 private extension NEVPNStatus {
     var isLoading: Bool {
         self == .connecting || self == .disconnecting || self == .reasserting
+    }
+}
+
+// MARK: - Forward rule model
+
+/// A UDP port-forward rule: listen on 0.0.0.0:<listen> inside the tunnel and
+/// forward datagrams to <host>:<port> over the WireGuard tunnel.
+struct ForwardRule: Identifiable, Equatable {
+    var id = UUID()
+    var listen: String = ""
+    var host: String = ""
+    var port: String = ""
+
+    /// Wire format passed to the tunnel extension: "listen>host:port".
+    /// Returns nil when the rule is empty; throws away malformed input.
+    func wire() -> String? {
+        let l = listen.trimmingCharacters(in: .whitespaces)
+        let h = host.trimmingCharacters(in: .whitespaces)
+        let p = port.trimmingCharacters(in: .whitespaces)
+        if l.isEmpty, h.isEmpty, p.isEmpty { return nil }
+        guard let lp = UInt16(l), lp > 0,
+              let tp = UInt16(p), tp > 0,
+              !h.isEmpty,
+              h.allSatisfy({ $0.isLetter || $0.isNumber || ".-_:[]".contains($0) })
+        else { return nil }
+        return "\(lp)>\(h):\(tp)"
+    }
+
+    static func encodeAll(_ rules: [ForwardRule]) -> String {
+        // Persist verbatim (even while partially typed); validation happens
+        // in wire() only when connecting.
+        rules.map { "\($0.listen.trimmingCharacters(in: .whitespaces))>\($0.host.trimmingCharacters(in: .whitespaces)):\($0.port.trimmingCharacters(in: .whitespaces))" }
+            .joined(separator: "\n")
+    }
+
+    static func decodeAll(from raw: String) -> [ForwardRule] {
+        raw.split(separator: "\n").map { line in
+            let parts = line.split(separator: ">", maxSplits: 1)
+            let listen = parts.count > 0 ? String(parts[0]) : ""
+            var host = "", port = ""
+            if parts.count > 1 {
+                // host may itself contain ':' for IPv6; split from the right.
+                if let idx = parts[1].lastIndex(of: ":") {
+                    host = String(parts[1][..<idx])
+                    port = String(parts[1][parts[1].index(after: idx)...])
+                } else {
+                    host = String(parts[1])
+                }
+            }
+            return ForwardRule(listen: listen, host: host, port: port)
+        }
     }
 }
